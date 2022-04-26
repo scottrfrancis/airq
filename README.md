@@ -19,19 +19,11 @@ To monitor indoor air quality during upcoming California Fire Season (now year-r
 * **_CHANGE PASSWORD_**
 * Ensure serial port is enabled and NOT for login shell
 
-* install pip
+* install tools
 
 ```bash
-sudo apt-get install python3-pip -y
-
 # picocom, tmux, and vim also good
 sudo apt install tmux vim picocom htop -y
-```
-
-* install requirements
-
-```bash
-pip3 install -r requirements.txt
 ```
 
 ## hookup
