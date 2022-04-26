@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug AirQ",
+        //    "program": "/home/scott/.cargo/bin/cargo",
+           "program": "target/debug/deps/airq-5fa32675e1b224e5",
+           "args": ["test", "dumpXX.raw"],
+           "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "-i",
+                "dumpXX.raw",
+                "--endpoint",
+                "a38islc3h7i87s-ats.iot.us-west-2.amazonaws.com",
+                "--rootCA",
+                "certs/AmazonRootCA1.pem",
+                "--cert",
+                "certs/713403dbe4d5c16fac8e197be645902c4db16c518e0df11b32aac875e876fd51-certificate.pem.crt",
+                "--key",
+                "certs/713403dbe4d5c16fac8e197be645902c4db16c518e0df11b32aac875e876fd51-private.pem.key",
+                "--thingName",
+                "airq",
+                "-t",
+                "60",
+                "--csv",
+                "-i", "dumpXX.raw"
+            ]
+        }
+    ]
+}
