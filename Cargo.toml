@@ -8,4 +8,3 @@ edition = "2021"
 [dependencies]
 nom = "7"
 hex-literal = "0"
-simple-error = "0"
