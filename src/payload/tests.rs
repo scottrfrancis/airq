@@ -1,11 +1,8 @@
-// use super::*;
-
 extern crate hex_literal;
 
 #[cfg(test)]
 mod payload_tests {
     use crate::payload::{FRAME_START, Payload, parse_stream_to_payload};
-    // use std::mem::size_of;
     use hex_literal::hex;
 
 
