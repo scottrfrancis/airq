@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nom = "7"
 hex-literal = "0"
+nom = "7"
+mockall = "0"

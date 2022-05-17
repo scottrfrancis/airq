@@ -19,13 +19,13 @@ pub struct Payload {
     start: u16,     // is always 'BM'
     len: u16,           // length of payload -- constant -- 0x1C
 
-    data: [u16; 12],    // 12 16-bit readings for various PM concentrations
+    pub data: [u16; 12],    // 12 16-bit readings for various PM concentrations
     reserved_data: u16, // seems to always be 0x9700 -- but no doc
 
     check: u16
 }
 
-const FRAME_START: u16 = 0x424D;        // 'BM'
+pub const FRAME_START: u16 = 0x424D;        // 'BM'
 
 fn start_tag_parser(s: &[u8]) -> IResult<&[u8], &[u8]> {
     tag(FRAME_START.to_be_bytes())(s)

@@ -67,3 +67,12 @@ See the [Datasheet](https://cdn-shop.adafruit.com/product-files/3686/plantower-p
 
 * checkout the repo
 * `cargo test` will run all the tests
+
+## Extracting and reporting measurements
+
+The sensor reports 12 measures per 32 byte frame at 9600 bps. 
+32*8 = 256 bits / 9600 bps = 26.67 mS/frame or about 37.5 frames of data per second.
+
+That's pretty fast. Real indoor air quality isn't going to change that quickly. But, if we move the sensor from room to room (say to kitchen after cooking bacon), we'd want the sensor to respond fairly quickly.
+
+As a starting point, let's average metrics over 100 frames (about 2.667 S) and write the readings out as CSV.
