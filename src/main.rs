@@ -1,51 +1,43 @@
+use itertools::join;
 use std::env;
 use std::fs::File;
-use std::io::BufReader;
+use std::io;
 use std::io::Read;
+
 
 use crate::payload::Payload;
 
-
 mod config;
-// mod observer;
 mod payload;
 
 
-fn main() {
+const CHUNK_SIZE: usize = 64;
+fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let filename= config::parse_config(&args);
-    println!("reading file: {}", filename);
+    let mut f = File::open(config::parse_config(&args))?;
+    let mut d = [0; 2*CHUNK_SIZE];
 
-    let f = File::open(filename).expect("error opening file");
-    let mut reader = BufReader::new(f);
-
-    const CHUNK_SIZE: usize = 2048;
-    let mut d: [u8; CHUNK_SIZE] = [0; CHUNK_SIZE];
-
+    let mut total_read = 0;
     loop {
-        let mut bytes_read = match reader.read(&mut d) {
-            Ok(n) => n,
-            Err(e) => 0,
+        total_read += f.read(&mut d[total_read..])?;
+
+        if total_read < CHUNK_SIZE {
+            continue;
+        }
+
+        let mut p;
+        let found;
+        (_, p, found) = match payload::parse_stream_to_payload(&d) {
+            Ok((i, p)) => (i, p, true),
+            Err(_e) => (&d[..], Payload::default(), false),
         };
-        if bytes_read <= 0 {
+
+        if found {
+            println!("{}", join(&*&mut p.data[0..3], ","));
             break;
         }
-
-        let mut input: &[u8] = &d;
-        let mut bytes_remaining = bytes_read;
-        loop {
-            let input_len = std::mem::size_of_val(input);
-            let mut p = Payload::default();
-            (input, p) = payload::parse_stream_to_payload(&input).expect("error parsing");
-            println!("{:?}", p.data);
-            
-            bytes_remaining -= input_len - std::mem::size_of_val(input);
-            if std::mem::size_of_val(input) < std::mem::size_of::<Payload>() ||
-                bytes_remaining < std::mem::size_of::<Payload>() {
-                
-                break;
-            }
-        }
     }
+
+    Ok(())
 }

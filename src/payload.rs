@@ -8,6 +8,7 @@ use nom::{
     IResult,
     bytes::streaming::tag, 
     bytes::streaming::take,
+    bytes::streaming::take_till,
     number::streaming::be_u16
 };
 
@@ -27,6 +28,10 @@ pub struct Payload {
 
 pub const FRAME_START: u16 = 0x424D;        // 'BM'
 
+fn find_possible_start(s: &[u8]) -> IResult<&[u8], &[u8]> {
+    take_till(|w| w == FRAME_START.to_be_bytes()[0])(s)
+}
+
 fn start_tag_parser(s: &[u8]) -> IResult<&[u8], &[u8]> {
     tag(FRAME_START.to_be_bytes())(s)
 }
@@ -39,9 +44,24 @@ fn take_n_bytes(s: &[u8], n: usize) -> IResult<&[u8], &[u8]> {
 pub fn parse_stream_to_payload(input: &[u8]) -> IResult<&[u8], Payload> {
     let mut p = Payload::default();
 
-    let (body, _) = start_tag_parser(input)
-        .expect("Frame Start not Found");
-    p.start = FRAME_START;
+    let mut body;
+    let mut found;
+    loop {
+        ((body, _)) = match find_possible_start(input) {
+            Err(e) => return Err(e),
+            Ok((b,s)) => (b,s),
+        };
+
+        (body, found) = match start_tag_parser(body) {
+            Err(_e) => (&body[2..], false),
+            Ok((body, _s)) => (body, true),
+        };
+        
+        if found {
+            p.start = FRAME_START;
+            break;
+        }
+    }
 
     let (body, len) = u16_parser(body)
         .expect("can't read frame length");
@@ -73,7 +93,7 @@ pub fn parse_stream_to_payload(input: &[u8]) -> IResult<&[u8], Payload> {
     let (body, check) = u16_parser(body)
         .expect("can't read checksum");
     if p.check != check {
-        eprintln!("checksums don't match!");
+        // eprintln!("checksums don't match!");
         return Err(Err::Error(nom::error::Error { input: body, code: nom::error::ErrorKind::Fail }));
     }
 

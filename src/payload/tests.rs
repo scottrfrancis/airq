@@ -18,6 +18,18 @@ mod payload_tests {
     //     "2D1E FFFE FDFC FBFA F9F8 F7F6 F5F4 1234"
     // );
 
+    // contains a complete frame starting at $18, and another partial frame following
+    // const OFFSET_START: [u8; 80] = hex!(
+    //     "6d6d 616e 6473 0d0a 5465 726d 696e 616c"
+    //     "2072 6561 6479 0d0a 424d 001c 0002 0004"
+    //     "0005 0002 0004 0005 01fe 0094 001a 0004"
+    //     "0002 0000 9700 030b 424d 001c 0002 0004"
+    //     "0005 0002 0004 0005 01fe 0094 001a 0004"
+    // );
+
+    // fn parser_finds_start() {
+
+    // }
 
     #[test]
     fn parser_returns_payload() {

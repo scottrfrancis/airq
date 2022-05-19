@@ -16,6 +16,7 @@ name = "airq"
 version = "0.1.0"
 dependencies = [
  "hex-literal",
+ "itertools",
  "mockall",
  "nom",
 ]
