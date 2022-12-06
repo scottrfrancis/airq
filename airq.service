@@ -5,6 +5,9 @@ Description=Air Quality Index monitor
 Type=simple
 User=pi
 Group=pi
+Restart=always
+RestartSec=90
+
 ExecStart=/home/pi/start.sh
 
 [Install]
