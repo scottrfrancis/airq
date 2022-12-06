@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::{thread, time};
-
+use std::time::SystemTime;
 
 
 use crate::payload::Payload;
@@ -93,8 +93,6 @@ fn set_display_color_for_aqi(disp: &mut GroveRgbLcd, aqi_level: u32) -> ()
 
 const CHUNK_SIZE: usize = 64;
 fn main() -> io::Result<()> {
-    let mut aqi_avg: u32 = 0;
-
     let mut display: GroveRgbLcd = grove_rgb_lcd::connect()?;
     display.set_rgb((0x10, 0x10, 0x40))?;
     
@@ -105,6 +103,9 @@ fn main() -> io::Result<()> {
 
     let mut total_read = 0;
     loop {
+        let now = SystemTime::now();
+            // .duration_since(UNIX_EPOCH)
+            // .as_millis();
         total_read += f.read(&mut d[total_read..])?;
 
         if total_read < CHUNK_SIZE {
@@ -118,19 +119,35 @@ fn main() -> io::Result<()> {
             Err(_e) => (&d[..], Payload::default(), false),
         };
 
-        let mut data_str = String::from("");
         if found {
-            aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u32;
-            data_str = format!("AQI {} ({},{},{})", 
+            let aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u32;
+            let data_str = format!("AQI {} ({},{},{})", 
                aqi_avg, p.data[0], p.data[1], p.data[2]);
 
             println!("{},{},{}", p.data[0], p.data[1], p.data[2]);
+
+            write_to_display(&mut display, &data_str.as_str());
+            set_display_color_for_aqi(&mut display, aqi_avg);
+
+            total_read = 0;
+            d = [0; 2*CHUNK_SIZE];
         }
 
-        write_to_display(&mut display, &data_str.as_str());
-        set_display_color_for_aqi(&mut display, aqi_avg);
+        // sensor updates every 1000 mS, so this will grab doubles,
+        // but will ensure ALL updates are captured 
+        // AND the clock will run smoothly...
 
-        thread::sleep(time::Duration::from_millis(1000));
+        // let end_tick = SystemTime::now()
+        //     .duration_since(UNIX_EPOCH)
+        //     .as_millis();
+        let elapsed_millis: u64 = now.elapsed()
+            .unwrap()
+            .as_millis()
+            .try_into()
+            .unwrap();
+        // println!("loop took {}", elapsed_millis);
+
+        thread::sleep(time::Duration::from_millis(1000 - elapsed_millis - 10));
     }
 
     // Ok(())

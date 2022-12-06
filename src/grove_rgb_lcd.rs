@@ -27,6 +27,7 @@ pub const DISPLAY_TEXT_ADDR: u16 = 0x3e;
 const PROGRAM_MODE: u8 = 0x80;
 
 const CLEAR_DISPLAY: u8 = 0x01;
+const HOME_CURSOR: u8 = 0x02;
 const DISPLAY_ON: u8 = 0x08;
 const NO_CURSOR: u8 = 0x04;
 const ENABLE_2ROWS: u8 = 0x28;
@@ -83,6 +84,14 @@ impl GroveRgbLcd
         Ok(())
     }
 
+    fn home_cursor(&mut self) -> i2c::Result<()>
+    {
+        self.i2c.block_write(PROGRAM_MODE, &[HOME_CURSOR])?;
+        thread::sleep(time::Duration::from_millis(5));
+
+        Ok(())
+    }
+
     fn display_on_no_cursor(&mut self) -> i2c::Result<()>
     {
         self.i2c.block_write(PROGRAM_MODE, &[DISPLAY_ON | NO_CURSOR])
@@ -109,7 +118,7 @@ impl GroveRgbLcd
     {
         if self.row_cursor == 0 
         {
-            // self.clear_display()?;
+            self.home_cursor()?;
         }
         
         for ch in row
@@ -138,8 +147,6 @@ impl GroveRgbLcd
     fn impl_set_text(&mut self, text: &str) -> Result<(), i2c::Error>
     {
         self.select_slave(DISPLAY_TEXT_ADDR)?;
-
-        // self.clear_display()?;
 
         // self.display_on_no_cursor()?;
         // self.enable_2rows()?;
