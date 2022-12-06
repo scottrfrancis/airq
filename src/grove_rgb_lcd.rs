@@ -109,7 +109,7 @@ impl GroveRgbLcd
     {
         if self.row_cursor == 0 
         {
-            self.clear_display()?;
+            // self.clear_display()?;
         }
         
         for ch in row

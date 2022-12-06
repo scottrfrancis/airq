@@ -19,7 +19,7 @@ mod payload;
 fn write_to_display(disp: &mut GroveRgbLcd, data: &str) -> ()
 {
     let date = Local::now();
-    let t = format!("{}\n  {}", data, date.format("%d %b %H:%M"));
+    let t = format!("{}\n {}", data, date.format("%d %b %H:%M:%S"));
     match disp.set_text(&t)
     {
         Err(err) => { println!("error: {:?}", err);},
@@ -74,6 +74,7 @@ fn set_display_color_for_aqi(disp: &mut GroveRgbLcd, aqi_level: u32) -> ()
 {
     let (r, g, b) = match aqi_level
     {
+        x if x <=  15 => (0x00, 0x10, 0x40),    // light blue
         x if x <=  50 => (0x00, 0x80, 0x00),    // green
         x if x <= 100 => (0x80, 0x80, 0x00),    // yellow
         x if x <= 150 => (0xF0, 0x40, 0x00),    // orange
@@ -122,13 +123,14 @@ fn main() -> io::Result<()> {
             aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u32;
             data_str = format!("AQI {} ({},{},{})", 
                aqi_avg, p.data[0], p.data[1], p.data[2]);
+
+            println!("{},{},{}", p.data[0], p.data[1], p.data[2]);
         }
 
-        println!("sending {}", data_str);
         write_to_display(&mut display, &data_str.as_str());
         set_display_color_for_aqi(&mut display, aqi_avg);
 
-        thread::sleep(time::Duration::from_millis(3000));
+        thread::sleep(time::Duration::from_millis(500));
     }
 
     // Ok(())

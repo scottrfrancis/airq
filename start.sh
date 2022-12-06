@@ -12,4 +12,5 @@ stty -F /dev/ttyS0 9600 -parenb -parodd -cmspar cs8 \
 
 cd ~
 
-echo "PM1,PM2.5,PM10"; while true ; do ./airq /dev/ttyS0; sleep 60; done
+echo "PM1,PM2.5,PM10"
+./airq /dev/ttyS0
