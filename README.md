@@ -122,15 +122,3 @@ to Compute AQI, only use the first 3 metrics - Pariculate matter of 1.0, 2.5, an
 
 the PM10 concentration is approx the same as the unitless AQI.  Multiply PM 2.5 by 3 for about the same scale.  PM1 doesn't have a standard, but could me most damaging... probaly muliply 9 or 10 for a rough approximation.
 
-Display idea:
-rotate the three horizontal bar graphs (for PM 1, 2.5, 10 -- scaled by 10, 3.1, and 1) with full scale (16 chars) being calibrated to about 480 (for a clean scale factor of 30) -- may be able to use partial shades too.
-Top line would have 1 and 24 hour average and measure -- "PM2.5 XXX YYY " -- XXX is 1 hr, YY is 24 hr.
-Second line would have 30s average bar graph. 
-Backlight would be colored based on AQI scale.
-
-maybe a fourth page with the other non-standard concentration stats, IP number, etc. ya know... a debug page.
-
-The module has a grove connector, so cut the ends off and crimp or splice a pin socket for power and I2C.
-Have to enable I2C on the Pi... and then there are sample libraries.  
-
-https://docs.rs/rppal/0.11.1/rppal/i2c/index.html

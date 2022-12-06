@@ -5,9 +5,8 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug AirQ",
-        //    "program": "/home/scott/.cargo/bin/cargo",
-           "program": "target/debug/deps/airq-5fa32675e1b224e5",
-           "args": ["test", "dumpXX.raw"],
+           "program": "target/debug/airq",
+           "args": ["out"],
            "cwd": "${workspaceFolder}"
         },
         {
