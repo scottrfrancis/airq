@@ -1,0 +1,11 @@
+[Unit]
+Description=Air Quality Index monitor
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+ExecStart=/home/pi/start.sh
+
+[Install]
+WantedBy=default.target
