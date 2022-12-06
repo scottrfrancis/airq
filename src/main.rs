@@ -19,7 +19,7 @@ mod payload;
 fn write_to_display(disp: &mut GroveRgbLcd, data: &str) -> ()
 {
     let date = Local::now();
-    let t = format!("{}\n {}", data, date.format("%d %b %H:%M:%S"));
+    let t = format!("{}\n    {}", data, date.format("%d %b %H:%M"));
     match disp.set_text(&t)
     {
         Err(err) => { println!("error: {:?}", err);},
@@ -130,7 +130,7 @@ fn main() -> io::Result<()> {
         write_to_display(&mut display, &data_str.as_str());
         set_display_color_for_aqi(&mut display, aqi_avg);
 
-        thread::sleep(time::Duration::from_millis(500));
+        thread::sleep(time::Duration::from_millis(1000));
     }
 
     // Ok(())
