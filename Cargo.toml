@@ -10,6 +10,9 @@ hex-literal = "0"
 itertools = "0"
 nom = "7"
 mockall = "0"
-rppal = "0"
 chrono = "0.4.23"
-
+rppal = "0.17.1"
+anyhow = "1.0.82"
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-modbus = { version = "*", default-features = false, features = ["tcp-server"] }
+futures = "0.3.30"

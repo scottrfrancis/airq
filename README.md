@@ -1,3 +1,9 @@
+---
+runme:
+  id: 01HWQS11Q220THE7VBMYA2GPJ0
+  version: v3
+---
+
 # Air Quality (PM2.5) indoor sensor
 
 To monitor indoor air quality during upcoming California Fire Season (now year-round!)
@@ -16,12 +22,11 @@ To monitor indoor air quality during upcoming California Fire Season (now year-r
 ## Pi Setup
 
 * follow [NuPiWhoDis](https://github.com/scottrfrancis/nuPiWhoDis) scripts
-* **_CHANGE PASSWORD_**
+* ___CHANGE PASSWORD___
 * Ensure serial port is enabled and NOT for login shell
-
 * install tools
 
-```bash
+```bash {"id":"01HWQS11Q220THE7VBMMJY5JFC"}
 # picocom, tmux, and vim also good
 sudo apt install tmux vim picocom htop -y
 ```
@@ -32,7 +37,7 @@ sudo apt install tmux vim picocom htop -y
 
 ## test output
 
-```bash
+```bash {"id":"01HWQS11Q220THE7VBMRHACBJB"}
 stty -F /dev/ttyS0 9600 -parenb -parodd -cmspar cs8 \
     hupcl -cstopb cread clocal -crtscts \
     -ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr \
@@ -69,7 +74,7 @@ From the datasheet:
 
 Framing:
 
-See the [Datasheet](https://cdn-shop.adafruit.com/product-files/3686/plantower-pms5003-manual_v2-3.pdf) for details, but the frames are 16 unsigned 16-bit words. The first word is a flag sequnce 0x424D kind of ensures all the bit lanes are connected. The payload consists of 12 measures of various weightings and sizings. An odd reserved word 0x9700 (perhaps a version number?), and *byte-wise* checksum
+See the [Datasheet](https://cdn-shop.adafruit.com/product-files/3686/plantower-pms5003-manual_v2-3.pdf) for details, but the frames are 16 unsigned 16-bit words. The first word is a flag sequnce 0x424D kind of ensures all the bit lanes are connected. The payload consists of 12 measures of various weightings and sizings. An odd reserved word 0x9700 (perhaps a version number?), and _byte-wise_ checksum
 
 ## Building and testing the code
 
@@ -78,7 +83,7 @@ See the [Datasheet](https://cdn-shop.adafruit.com/product-files/3686/plantower-p
 
 ## Extracting and reporting measurements
 
-The sensor reports 12 measures per 32 byte frame at 9600 bps. 
+The sensor reports 12 measures per 32 byte frame at 9600 bps.
 32*8 = 256 bits / 9600 bps = 26.67 mS/frame or about 37.5 frames of data per second.
 
 That's pretty fast. Real indoor air quality isn't going to change that quickly. But, if we move the sensor from room to room (say to kitchen after cooking bacon), we'd want the sensor to respond fairly quickly.
@@ -99,14 +104,29 @@ The program is a ONE-SHOT that will read up to 64 bytes from the given file (e.g
 
 Since it is a one-shot, need to script the output.
 
-```bash
+```bash {"id":"01HWQS11Q220THE7VBMVMSP0GR"}
 echo "PM1,PM2.5,PM10"; while true ; do ./airq /dev/ttyS0; sleep 60; done
+```
+
+## Modbus TCP Server
+
+The three main readings (PM1.0, PM2.5, and PM10) are available on Modbus TCP Input registers 1..3. (NB, Modbus numbers registers from 1 not 0.)
+
+The code in `main.rs` creates a modbus server on :5502 (all adapters - 0.0.0.0). To make this accessible to modbus integrations on the well-known port number, :502, an NFTables rule is needed.
+
+See https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/security_guide/sec-configuring_port_forwarding_using_nftables
+
+```bash {"id":"01HWTADEYS6B5CNSSQ086VC1MV"}
+sudo su -
+
+nft add table ip nat
+nft -- add chain ip nat prerouting { type nat hook prerouting priority -100 \; }
+nft add rule ip nat prerouting tcp dport 502 redirect to :5502
 ```
 
 ### Display
 
 https://wiki.seeedstudio.com/Grove-LCD_RGB_Backlight/#resources
-
 
 ### AQI Calc
 
@@ -116,7 +136,6 @@ https://www.epa.gov/sites/default/files/2014-05/documents/zell-aqi.pdf
 may need additional sensors for airborne chemicals
 
 https://www.seeedstudio.com/Grove-Air-Quality-Sensor-v1-3-Arduino-Compatible.html
-
 
 to Compute AQI, only use the first 3 metrics - Pariculate matter of 1.0, 2.5, and 10 microns in micro-grams/cubic meter.  AQI only uses 2.5 and 10 micron though.  The AQI calc also uses PM2.5 in 0.1 ug/m3... so need to multiply reading from sensor by 10.
 

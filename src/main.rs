@@ -1,11 +1,20 @@
 use chrono::Local;
-// use itertools::join;
-use std::env;
-use std::fs::File;
-use std::io;
-use std::io::Read;
-use std::{thread, time};
-use std::time::SystemTime;
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    env,
+    fs::{ 
+        // read,
+        File
+    },
+    future,
+    io::Read,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, SystemTime},
+};
+// use futures::executor::block_on;
 
 
 use crate::payload::Payload;
@@ -15,6 +24,110 @@ mod grove_rgb_lcd;
 use grove_rgb_lcd::GroveRgbLcd;
 mod payload;
 
+
+
+use tokio::net::TcpListener;
+
+use tokio_modbus::{
+    prelude::*,
+    server::tcp::{accept_tcp_connection, Server},
+};
+
+struct ModbusService {
+    input_registers: Arc<Mutex<HashMap<u16, u16>>>,
+    holding_registers: Arc<Mutex<HashMap<u16, u16>>>,
+}
+
+impl tokio_modbus::server::Service for ModbusService {
+    type Request = Request<'static>;
+    type Future = future::Ready<Result<Response, Exception>>;
+
+    fn call(&self, req: Self::Request) -> Self::Future {
+        match req {
+            Request::ReadInputRegisters(addr, cnt) => {
+                 future::ready(
+                    register_read(&self.input_registers.lock().unwrap(), addr, cnt)
+                        .map(Response::ReadInputRegisters),
+                )
+            },
+            Request::ReadHoldingRegisters(addr, cnt) => future::ready(
+                register_read(&self.holding_registers.lock().unwrap(), addr, cnt)
+                    .map(Response::ReadHoldingRegisters),
+            ),
+            Request::WriteMultipleRegisters(addr, values) => future::ready(
+                register_write(&mut self.holding_registers.lock().unwrap(), addr, &values)
+                    .map(|_| Response::WriteMultipleRegisters(addr, values.len() as u16)),
+            ),
+            Request::WriteSingleRegister(addr, value) => future::ready(
+                register_write(
+                    &mut self.holding_registers.lock().unwrap(),
+                    addr,
+                    std::slice::from_ref(&value),
+                )
+                .map(|_| Response::WriteSingleRegister(addr, value)),
+            ),
+            _ => {
+                println!("SERVER: Exception::IllegalFunction - Unimplemented function code in request: {req:?}");
+                future::ready(Err(Exception::IllegalFunction))
+            }
+        }
+    }
+}
+
+impl ModbusService {
+    fn new(readings: Arc<Mutex<HashMap<u16, u16>>>) -> Self {
+        let mut holding_registers = HashMap::new();
+        holding_registers.insert(0, 0);
+        holding_registers.insert(1, 0);
+        holding_registers.insert(2, 0);
+        holding_registers.insert(3, 0);
+
+        Self {
+            input_registers: readings,
+            holding_registers: Arc::new(Mutex::new(holding_registers)),
+        }
+    }
+}
+
+/// Helper function implementing reading registers from a HashMap.
+fn register_read(
+    registers: &HashMap<u16, u16>,
+    addr: u16,
+    cnt: u16,
+) -> Result<Vec<u16>, Exception> {
+    let mut response_values = vec![0; cnt.into()];
+    for i in 0..cnt {
+        let reg_addr = addr + i;
+        if let Some(r) = registers.get(&reg_addr) {
+            response_values[i as usize] = *r;
+        } else {
+            println!("SERVER: Exception::IllegalDataAddress");
+            return Err(Exception::IllegalDataAddress);
+        }
+    }
+
+    Ok(response_values)
+}
+
+/// Write a holding register. Used by both the write single register
+/// and write multiple registers requests.
+fn register_write(
+    registers: &mut HashMap<u16, u16>,
+    addr: u16,
+    values: &[u16],
+) -> Result<(), Exception> {
+    for (i, value) in values.iter().enumerate() {
+        let reg_addr = addr + i as u16;
+        if let Some(r) = registers.get_mut(&reg_addr) {
+            *r = *value;
+        } else {
+            println!("SERVER: Exception::IllegalDataAddress");
+            return Err(Exception::IllegalDataAddress);
+        }
+    }
+
+    Ok(())
+}
 
 fn write_to_display(disp: &mut GroveRgbLcd, data: &str) -> ()
 {
@@ -92,21 +205,46 @@ fn set_display_color_for_aqi(disp: &mut GroveRgbLcd, aqi_level: u32) -> ()
 }
 
 const CHUNK_SIZE: usize = 64;
-fn main() -> io::Result<()> {
-    let mut display: GroveRgbLcd = grove_rgb_lcd::connect()?;
-    display.set_rgb((0x10, 0x10, 0x40))?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>>  {
+    let socket_addr: SocketAddr = "0.0.0.0:5502".parse().unwrap();
+
+    // use readings to hold the last 3 readings in a register format for the modbus server
+    let mut readings: HashMap<u16, u16> = HashMap::new();
+    readings.insert(0, 0);
+    readings.insert(1, 0);
+    readings.insert(2, 0);
+    let readings = Arc::new(Mutex::new(readings));
+
+    let r1 = readings.clone();
+    thread::spawn(move || {
+        sampling_context(r1);
+    });
+
+    tokio::select! {
+        _ = server_context(socket_addr, readings.clone()) => unreachable!(),
+    }
+
+    // Ok(())
+}
+
+// async 
+fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
+    let mut display = grove_rgb_lcd::connect().unwrap();
+    let _ = display.set_rgb((0x10, 0x10, 0x40));
     
     let args: Vec<String> = env::args().collect();
 
-    let mut f = File::open(config::parse_config(&args))?;
+    let mut f = File::open(config::parse_config(&args)).unwrap();
     let mut d = [0; 2*CHUNK_SIZE];
 
     let mut total_read = 0;
+
     loop {
         let now = SystemTime::now();
             // .duration_since(UNIX_EPOCH)
             // .as_millis();
-        total_read += f.read(&mut d[total_read..])?;
+        total_read += f.read(&mut d[total_read..]).unwrap_or(0);
 
         if total_read < CHUNK_SIZE {
             continue;
@@ -125,6 +263,18 @@ fn main() -> io::Result<()> {
                aqi_avg, p.data[0], p.data[1], p.data[2]);
 
             println!("{},{},{}", p.data[0], p.data[1], p.data[2]);
+            // update the readings register
+            let mut readings = readings.lock().unwrap();
+            for i in 0..p.data.len() {
+                let addr = i as u16;
+                if i < readings.len() {
+                    let x = readings.get_mut(&addr).unwrap();
+                    *x = p.data[i];
+                }
+                else {
+                    readings.insert(addr, p.data[i]);
+                }
+            }
 
             write_to_display(&mut display, &data_str.as_str());
             set_display_color_for_aqi(&mut display, aqi_avg);
@@ -147,8 +297,29 @@ fn main() -> io::Result<()> {
             .unwrap();
         // println!("loop took {}", elapsed_millis);
 
-        thread::sleep(time::Duration::from_millis(1000 - elapsed_millis - 10));
+        thread::sleep(Duration::from_millis(1000 - elapsed_millis - 10));
     }
+}
 
-    // Ok(())
+async fn server_context(socket_addr: SocketAddr, readings: Arc<Mutex<HashMap<u16, u16>>>) -> anyhow::Result<()> {
+    // loop {
+    println!("Starting up Modbus server on {socket_addr}");
+    let listener = TcpListener::bind(socket_addr).await?;
+    // let bind_result = block_on(TcpListener::bind(socket_addr));
+    // let listener = bind_result.unwrap();
+
+    let server = Server::new(listener);
+    let new_service = |_socket_addr| Ok(Some(ModbusService::new(readings.clone())));
+    let on_connected = |stream, socket_addr| async move {
+        accept_tcp_connection(stream, socket_addr, new_service)
+    };
+    let on_process_error = |err| {
+        eprintln!("{err}");
+    };
+    println!("ready to serve");
+    server.serve(&on_connected, on_process_error).await?;
+    // let _ = block_on(server.serve(&on_connected, on_process_error));
+    println!("Server done");
+    // }
+    Ok(())
 }
