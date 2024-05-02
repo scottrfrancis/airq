@@ -124,6 +124,16 @@ nft -- add chain ip nat prerouting { type nat hook prerouting priority -100 \; }
 nft add rule ip nat prerouting tcp dport 502 redirect to :5502
 ```
 
+## Adding Temp/humidity with AM2302 (aka DHT 22 or 11)
+
+Found some support for a Rust implementation - https://github.com/RougeEtoile/gpio-am2302-rs
+
+It _works_ but isn't great.  I suppose it does help drive some error handling and robustness ;P
+
+Since it does some timed, low-level bit banging with some unclear support and confused programming model, be sure to **ALWAYS BUILD RELEASE** to avoid any timing disruptions.
+
+But the author published the crate with PRIVATE data fields for the reading, yet the github repo has those fields as public.  So... import by path.
+
 ### Display
 
 https://wiki.seeedstudio.com/Grove-LCD_RGB_Backlight/#resources

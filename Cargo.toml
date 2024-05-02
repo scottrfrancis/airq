@@ -16,3 +16,4 @@ anyhow = "1.0.82"
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp-server"] }
 futures = "0.3.30"
+gpio-am2302-rs = { version = "1.1.0", path = "../gpio-am2302-rs" }

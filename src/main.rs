@@ -1,4 +1,7 @@
 use chrono::Local;
+use gpio_am2302_rs::{ 
+    try_read,
+};
 use std::{
     collections::HashMap,
     convert::TryInto,
@@ -183,7 +186,7 @@ fn aqi(conc_2_5: f64, conc_10: f64) -> f64
 }
 
 // CF - https://www.epa.gov/sites/default/files/2014-05/documents/zell-aqi.pdf
-fn set_display_color_for_aqi(disp: &mut GroveRgbLcd, aqi_level: u32) -> ()
+fn set_display_color_for_aqi(disp: &mut GroveRgbLcd, aqi_level: u16) -> ()
 {
     let (r, g, b) = match aqi_level
     {
@@ -211,9 +214,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
 
     // use readings to hold the last 3 readings in a register format for the modbus server
     let mut readings: HashMap<u16, u16> = HashMap::new();
-    readings.insert(0, 0);
-    readings.insert(1, 0);
-    readings.insert(2, 0);
+    readings.insert(0, 0);      // PM 1.0
+    readings.insert(1, 0);    // PM 2.5
+    readings.insert(2, 0);  // PM 10
+    readings.insert(3, 0);  // temp deg K*100
+    readings.insert(4, 0);  // humidity percent * 100
+    readings.insert(5, 0);  // AQI
+    readings.insert(6, 0);  // AQI update tick - LW
+    readings.insert(7, 0);
+    readings.insert(8, 0);  
+    readings.insert(9, 0);  // AQI update tick - HW
+    readings.insert(10, 0);  // temp/hum update tick - HW
+    readings.insert(11, 0);  
+    readings.insert(12, 0);  
+    readings.insert(13, 0);  // temp/hum update tick - LW
+
     let readings = Arc::new(Mutex::new(readings));
 
     let r1 = readings.clone();
@@ -221,11 +236,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
         sampling_context(r1);
     });
 
+    let r2 = readings.clone();
+    thread::spawn(move || {
+        temp_humidity_sampling(r2);
+    });
+
     tokio::select! {
         _ = server_context(socket_addr, readings.clone()) => unreachable!(),
     }
 
     // Ok(())
+}
+
+// temp and humidity sampling
+fn temp_humidity_sampling(readings: Arc<Mutex<HashMap<u16, u16>>>) {
+    let gpio_number = 4;
+    loop {
+        match try_read(gpio_number) {
+            Ok(reading) => {
+                println!("{:.1}°C,{:.1}%", 
+                    reading.temperature, reading.humidity);
+
+                let mut registers = readings.lock().unwrap();
+                if 14 <= registers.len() {
+                    let x = registers.get_mut(&3).unwrap();
+                    *x = (reading.temperature*100.0 + 27315.0) as u16;
+                    let x = registers.get_mut(&4).unwrap();
+                    *x = (reading.humidity*100.0) as u16;
+
+                    let ticks: u64 = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+
+                    let x = registers.get_mut(&10).unwrap();
+                    *x = (ticks >> 48) as u16;
+                    let x = registers.get_mut(&11).unwrap();
+                    *x = ((ticks >> 32) & 0xFFFF) as u16;
+                    let x = registers.get_mut(&12).unwrap();
+                    *x = ((ticks >> 16) & 0xFFFF) as u16;
+                    let x = registers.get_mut(&13).unwrap();
+                    *x = (ticks & 0xFFFF) as u16;
+                }
+            },
+            _ => { },
+        }
+        thread::sleep(Duration::from_secs(10));
+    }
 }
 
 // async 
@@ -244,6 +301,7 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
         let now = SystemTime::now();
             // .duration_since(UNIX_EPOCH)
             // .as_millis();
+
         total_read += f.read(&mut d[total_read..]).unwrap_or(0);
 
         if total_read < CHUNK_SIZE {
@@ -258,14 +316,14 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
         };
 
         if found {
-            let aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u32;
+            let aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u16;
             let data_str = format!("AQI {} ({},{},{})", 
                aqi_avg, p.data[0], p.data[1], p.data[2]);
 
             println!("{},{},{}", p.data[0], p.data[1], p.data[2]);
             // update the readings register
             let mut readings = readings.lock().unwrap();
-            for i in 0..p.data.len() {
+            for i in 0..3 {
                 let addr = i as u16;
                 if i < readings.len() {
                     let x = readings.get_mut(&addr).unwrap();
@@ -275,6 +333,21 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
                     readings.insert(addr, p.data[i]);
                 }
             }
+            let x = readings.get_mut(&5).unwrap();
+            *x = aqi_avg;
+
+            let ticks: u64 = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let x = readings.get_mut(&6).unwrap();
+            *x = (ticks >> 48) as u16;
+            let x = readings.get_mut(&7).unwrap();
+            *x = ((ticks >> 32) & 0xFFFF) as u16;
+            let x = readings.get_mut(&8).unwrap();
+            *x = ((ticks >> 16) & 0xFFFF) as u16;
+            let x = readings.get_mut(&9).unwrap();
+            *x = (ticks & 0xFFFF) as u16;
 
             write_to_display(&mut display, &data_str.as_str());
             set_display_color_for_aqi(&mut display, aqi_avg);
@@ -286,18 +359,13 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
         // sensor updates every 1000 mS, so this will grab doubles,
         // but will ensure ALL updates are captured 
         // AND the clock will run smoothly...
-
-        // let end_tick = SystemTime::now()
-        //     .duration_since(UNIX_EPOCH)
-        //     .as_millis();
         let elapsed_millis: u64 = now.elapsed()
             .unwrap()
             .as_millis()
             .try_into()
             .unwrap();
-        // println!("loop took {}", elapsed_millis);
 
-        thread::sleep(Duration::from_millis(1000 - elapsed_millis - 10));
+        thread::sleep(Duration::from_millis(1*1000 - elapsed_millis - 10));
     }
 }
 
