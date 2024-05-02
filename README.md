@@ -134,6 +134,23 @@ Since it does some timed, low-level bit banging with some unclear support and co
 
 But the author published the crate with PRIVATE data fields for the reading, yet the github repo has those fields as public.  So... import by path.
 
+## Summary of Modbus Registers
+
+Note these are '0-based' addresses.  Some SCADA or other systems may be '1-based' and you may need to add 1 to the addresses.
+
+| Input Register Address | Reading | Data Type | Comment |
+| --- | --- | --- | --- | 
+| 0x00 | AQI (computed) | Unsigned Integer (16-bit) | Computed from PM readings |
+| 0x01 | PM1.0 | Unsigned Integer (16-bit) | PM 1.0 Reading |
+| 0x02 | PM2.5 | Unsigned Integer (16-bit) | PM 2.5 |
+| 0x03 | PM 10 | Unsigned Integer (16-bit) | PM 10 |
+| 0x04 | AQI timestamp | Unsigned Long (32-bit) BE | 32-bit overflowing epoch seconds |
+| 0x06 | Temp °C | Float (32-bit) BE | degrees Celsius |
+| 0x08 | Humidity | Float (32-bit) BE | percentage |
+| 0x0A | Temp timestamp | Unsigned Long (32-bit) BE | 32-bit overflowing epoch seconds |
+
+Note that the word size for Modbus is 16-bits. Parameters requiring multiple register encodes are BIG ENDIAN encoded. Timestamps are the low-order 32 bits of the epoch timestamp and will overflow. While they should generally be monotonically increasing (other than rollover), they should not be used for precise timing, but rather to detect staleness or when Temp and AQI measures are significantly out of sync.
+
 ### Display
 
 https://wiki.seeedstudio.com/Grove-LCD_RGB_Backlight/#resources
