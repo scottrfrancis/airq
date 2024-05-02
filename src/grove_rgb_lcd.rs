@@ -157,7 +157,16 @@ impl GroveRgbLcd
        
         for line in text.lines()
         {
-            self.write_line(line)?;
+            // if line length is less than the display length, pad it with spaces
+            let mut padded_line = line.to_string();
+            if padded_line.len() < LINE_LENGTH
+            {
+                padded_line.push_str(&" ".repeat(LINE_LENGTH - line.len()));
+            } else if padded_line.len() > LINE_LENGTH
+            {
+                padded_line = padded_line.chars().take(LINE_LENGTH).collect();
+            }
+            self.write_line(&padded_line)?;
         }
 
         Ok(())

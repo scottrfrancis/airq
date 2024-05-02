@@ -241,11 +241,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
         temp_humidity_sampling(r2);
     });
 
+    // add a display output thread
+    let r3 = readings.clone();
+    thread::spawn(move || {
+        display_registers(r3);
+});
+
     tokio::select! {
         _ = server_context(socket_addr, readings.clone()) => unreachable!(),
     }
 
     // Ok(())
+}
+
+fn display_registers(readings: Arc<Mutex<HashMap<u16, u16>>>) {
+    let mut display = grove_rgb_lcd::connect().unwrap();
+    let _ = display.set_rgb((0x10, 0x10, 0x40));
+
+    write_to_display(&mut display, &"");
+    
+    loop {
+        thread::sleep(Duration::from_secs(30));     // wait for the first reading to come in
+
+        let registers = readings.lock().unwrap();
+
+        // lines are 16 chars long
+        // "AQI xx xx.x° xx%"
+        let aqi = *registers.get(&5).unwrap();
+        // let deg = 0xDF as char;
+        let deg = 'F';  // for now just use F -- the char isn't showing up as per datasheet
+        let t = (*registers.get(&3).unwrap() as f64 - 27315.0)/100.0 * (9.0/5.0) + 32.0;
+        let h = ((*registers.get(&4).unwrap() as f64)/100.0) as u32;
+        drop(registers);
+
+        let line1 = format!("AQI {} {:.1}{} {}%", aqi, t, deg, h);
+
+        write_to_display(&mut display, &line1);
+        set_display_color_for_aqi(&mut display, aqi);
+    }
 }
 
 // temp and humidity sampling
@@ -286,10 +319,7 @@ fn temp_humidity_sampling(readings: Arc<Mutex<HashMap<u16, u16>>>) {
 }
 
 // async 
-fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
-    let mut display = grove_rgb_lcd::connect().unwrap();
-    let _ = display.set_rgb((0x10, 0x10, 0x40));
-    
+fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {  
     let args: Vec<String> = env::args().collect();
 
     let mut f = File::open(config::parse_config(&args)).unwrap();
@@ -317,8 +347,8 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
 
         if found {
             let aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u16;
-            let data_str = format!("AQI {} ({},{},{})", 
-               aqi_avg, p.data[0], p.data[1], p.data[2]);
+            // let data_str = format!("AQI {} ({},{},{})", 
+            //    aqi_avg, p.data[0], p.data[1], p.data[2]);
 
             println!("{},{},{}", p.data[0], p.data[1], p.data[2]);
             // update the readings register
@@ -349,8 +379,8 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
             let x = readings.get_mut(&9).unwrap();
             *x = (ticks & 0xFFFF) as u16;
 
-            write_to_display(&mut display, &data_str.as_str());
-            set_display_color_for_aqi(&mut display, aqi_avg);
+            // write_to_display(&mut display, &data_str.as_str());
+            // set_display_color_for_aqi(&mut display, aqi_avg);
 
             total_read = 0;
             d = [0; 2*CHUNK_SIZE];
