@@ -70,11 +70,10 @@ impl tokio_modbus::server::Service for ModbusService {
 
 impl ModbusService {
     fn new(readings: Arc<Mutex<HashMap<u16, u16>>>) -> Self {
-        let mut holding_registers = HashMap::new();
-        holding_registers.insert(0, 0);
-        holding_registers.insert(1, 0);
-        holding_registers.insert(2, 0);
-        holding_registers.insert(3, 0);
+        let mut holding_registers = HashMap::with_capacity(16);
+        for k in 0..16 {
+            holding_registers.insert(k, 0);
+        }
 
         Self {
             input_registers: readings,
@@ -261,7 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
     write_register(&mut registers, PM_10, 0);    // 1
     write_long_register(&mut registers, AQI_TICK_HW, 0); // 2 * 16-bit
 
-    write_float_register(&mut registers, TEMP_HW, 0.0); // 2 
+    write_float_register(&mut registers, TEMP_HW, -40.0); // 2 
     write_float_register(&mut registers, HUM_HW, 0.0);  // 2
     write_long_register(&mut registers, TEMP_HUM_TICK_HW, 0); // 2 * 16-bit
     // 12 registers * 16-bit = 24 bytes
