@@ -1,15 +1,9 @@
 use chrono::Local;
-use gpio_am2302_rs::{ 
-    try_read,
-};
+use gpio_am2302_rs::{ try_read };
 use std::{
     collections::HashMap,
-    convert::TryInto,
     env,
-    fs::{ 
-        // read,
-        File
-    },
+    fs::{ File },
     future,
     io::Read,
     net::SocketAddr,
@@ -17,8 +11,6 @@ use std::{
     thread,
     time::{Duration, SystemTime},
 };
-// use futures::executor::block_on;
-
 
 use crate::payload::Payload;
 
@@ -26,7 +18,6 @@ mod config;
 mod grove_rgb_lcd;
 use grove_rgb_lcd::GroveRgbLcd;
 mod payload;
-
 
 
 use tokio::net::TcpListener;
@@ -207,29 +198,75 @@ fn set_display_color_for_aqi(disp: &mut GroveRgbLcd, aqi_level: u16) -> ()
     ()
 }
 
+fn read_float_register(registers: &HashMap<u16, u16>, addr: u16) -> f32 {
+    let u = (read_register(registers, addr) as u32) << 16 | 
+                    (read_register(registers, addr + 1) as u32);
+    let f = f32::from_bits(u);
+    f
+}
+fn write_float_register(registers: &mut HashMap<u16, u16>, addr: u16, f: f32) {
+    let u = f.to_bits() as u32;
+    write_register(registers, addr, (u >> 16) as u16);
+    write_register(registers, addr + 1, (u & 0xFFFF) as u16);
+} 
+
+#[allow(dead_code)]
+fn read_long_register(registers: &HashMap<u16, u16>, addr: u16) -> u32 {
+    (read_register(registers, addr) as u32) << 16 | 
+        (read_register(registers, addr + 1) as u32)
+}
+fn write_long_register(registers: &mut HashMap<u16, u16>, addr: u16, u: u32) {
+    let hw = (u >> 16) as u16;
+    let lw = (u & 0xFFFF) as u16;
+    write_register(registers, addr, hw);
+    write_register(registers, addr + 1, lw);
+}
+
+fn read_register(registers: &HashMap<u16, u16>, addr: u16) -> u16 {
+    match registers.get(&addr) {
+        Some(x) => *x,
+        None => 0,
+    }
+}
+fn write_register(registers: &mut HashMap<u16, u16>, addr: u16, value: u16) {
+    if !registers.contains_key(&addr) {
+        registers.insert(addr, value);
+    } else {
+        let x = registers.get_mut(&addr).unwrap();
+        *x = value;
+    }
+}
+
+// indexes into the readings register
+const AQI: u16 = 0;
+const PM_1_0: u16 = 1;
+const PM_2_5: u16 = 2;
+const PM_10: u16 = 3;
+const AQI_TICK_HW: u16 = 4;
+const TEMP_HW: u16 = 6;
+const HUM_HW: u16 = 8;
+const TEMP_HUM_TICK_HW: u16 = 10;
+
 const CHUNK_SIZE: usize = 64;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>>  {
     let socket_addr: SocketAddr = "0.0.0.0:5502".parse().unwrap();
 
     // use readings to hold the last 3 readings in a register format for the modbus server
-    let mut readings: HashMap<u16, u16> = HashMap::new();
-    readings.insert(0, 0);      // PM 1.0
-    readings.insert(1, 0);    // PM 2.5
-    readings.insert(2, 0);  // PM 10
-    readings.insert(3, 0);  // temp deg K*100
-    readings.insert(4, 0);  // humidity percent * 100
-    readings.insert(5, 0);  // AQI
-    readings.insert(6, 0);  // AQI update tick - LW
-    readings.insert(7, 0);
-    readings.insert(8, 0);  
-    readings.insert(9, 0);  // AQI update tick - HW
-    readings.insert(10, 0);  // temp/hum update tick - HW
-    readings.insert(11, 0);  
-    readings.insert(12, 0);  
-    readings.insert(13, 0);  // temp/hum update tick - LW
+    let mut registers: HashMap<u16, u16> = HashMap::with_capacity(16);
+    // default them to 0
+    write_register(&mut registers, AQI, 0);         // 1 * 16-bit
+    write_register(&mut registers, PM_1_0, 0);      // 1
+    write_register(&mut registers, PM_2_5, 0);      // 1
+    write_register(&mut registers, PM_10, 0);    // 1
+    write_long_register(&mut registers, AQI_TICK_HW, 0); // 2 * 16-bit
 
-    let readings = Arc::new(Mutex::new(readings));
+    write_float_register(&mut registers, TEMP_HW, 0.0); // 2 
+    write_float_register(&mut registers, HUM_HW, 0.0);  // 2
+    write_long_register(&mut registers, TEMP_HUM_TICK_HW, 0); // 2 * 16-bit
+    // 12 registers * 16-bit = 24 bytes
+    
+    let readings = Arc::new(Mutex::new(registers));
 
     let r1 = readings.clone();
     thread::spawn(move || {
@@ -250,8 +287,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
     tokio::select! {
         _ = server_context(socket_addr, readings.clone()) => unreachable!(),
     }
-
-    // Ok(())
 }
 
 fn display_registers(readings: Arc<Mutex<HashMap<u16, u16>>>) {
@@ -263,15 +298,14 @@ fn display_registers(readings: Arc<Mutex<HashMap<u16, u16>>>) {
     loop {
         thread::sleep(Duration::from_secs(30));     // wait for the first reading to come in
 
-        let registers = readings.lock().unwrap();
-
         // lines are 16 chars long
         // "AQI xx xx.x° xx%"
-        let aqi = *registers.get(&5).unwrap();
+        let registers = readings.lock().unwrap();
+        let aqi = read_register(&*registers, AQI);
         // let deg = 0xDF as char;
         let deg = 'F';  // for now just use F -- the char isn't showing up as per datasheet
-        let t = (*registers.get(&3).unwrap() as f64 - 27315.0)/100.0 * (9.0/5.0) + 32.0;
-        let h = ((*registers.get(&4).unwrap() as f64)/100.0) as u32;
+        let t = read_float_register(&*registers, TEMP_HW) * 9.0/5.0 + 32.0;
+        let h = read_float_register(&*registers, HUM_HW);
         drop(registers);
 
         let line1 = format!("AQI {} {:.1}{} {}%", aqi, t, deg, h);
@@ -282,35 +316,24 @@ fn display_registers(readings: Arc<Mutex<HashMap<u16, u16>>>) {
 }
 
 // temp and humidity sampling
+const GPIO_NUMBER: u32 = 4;
 fn temp_humidity_sampling(readings: Arc<Mutex<HashMap<u16, u16>>>) {
-    let gpio_number = 4;
     loop {
-        match try_read(gpio_number) {
+        match try_read(GPIO_NUMBER) {
             Ok(reading) => {
                 println!("{:.1}°C,{:.1}%", 
                     reading.temperature, reading.humidity);
 
                 let mut registers = readings.lock().unwrap();
-                if 14 <= registers.len() {
-                    let x = registers.get_mut(&3).unwrap();
-                    *x = (reading.temperature*100.0 + 27315.0) as u16;
-                    let x = registers.get_mut(&4).unwrap();
-                    *x = (reading.humidity*100.0) as u16;
+                write_float_register(&mut *registers, TEMP_HW, reading.temperature);
+                write_float_register(&mut *registers, HUM_HW, reading.humidity);
 
-                    let ticks: u64 = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-
-                    let x = registers.get_mut(&10).unwrap();
-                    *x = (ticks >> 48) as u16;
-                    let x = registers.get_mut(&11).unwrap();
-                    *x = ((ticks >> 32) & 0xFFFF) as u16;
-                    let x = registers.get_mut(&12).unwrap();
-                    *x = ((ticks >> 16) & 0xFFFF) as u16;
-                    let x = registers.get_mut(&13).unwrap();
-                    *x = (ticks & 0xFFFF) as u16;
-                }
+                let ticks: u64 = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                write_long_register(&mut *registers, TEMP_HUM_TICK_HW, (ticks & 0xFFFFffff) as u32);
+                drop(registers);
             },
             _ => { },
         }
@@ -318,7 +341,6 @@ fn temp_humidity_sampling(readings: Arc<Mutex<HashMap<u16, u16>>>) {
     }
 }
 
-// async 
 fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {  
     let args: Vec<String> = env::args().collect();
 
@@ -328,12 +350,7 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
     let mut total_read = 0;
 
     loop {
-        let now = SystemTime::now();
-            // .duration_since(UNIX_EPOCH)
-            // .as_millis();
-
         total_read += f.read(&mut d[total_read..]).unwrap_or(0);
-
         if total_read < CHUNK_SIZE {
             continue;
         }
@@ -347,64 +364,32 @@ fn sampling_context(readings: Arc<Mutex<HashMap<u16, u16>>>) {
 
         if found {
             let aqi_avg = aqi(p.data[1] as f64, p.data[2] as f64) as u16;
-            // let data_str = format!("AQI {} ({},{},{})", 
-            //    aqi_avg, p.data[0], p.data[1], p.data[2]);
-
             println!("{},{},{}", p.data[0], p.data[1], p.data[2]);
-            // update the readings register
-            let mut readings = readings.lock().unwrap();
-            for i in 0..3 {
-                let addr = i as u16;
-                if i < readings.len() {
-                    let x = readings.get_mut(&addr).unwrap();
-                    *x = p.data[i];
-                }
-                else {
-                    readings.insert(addr, p.data[i]);
-                }
-            }
-            let x = readings.get_mut(&5).unwrap();
-            *x = aqi_avg;
+            // update the readings registers
+            let mut registers = readings.lock().unwrap();
+            write_register(&mut *registers, AQI, aqi_avg);
+            write_register(&mut *registers, PM_1_0, p.data[0] as u16);
+            write_register(&mut *registers, PM_2_5, p.data[1] as u16);
+            write_register(&mut *registers, PM_10, p.data[2] as u16);
 
             let ticks: u64 = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let x = readings.get_mut(&6).unwrap();
-            *x = (ticks >> 48) as u16;
-            let x = readings.get_mut(&7).unwrap();
-            *x = ((ticks >> 32) & 0xFFFF) as u16;
-            let x = readings.get_mut(&8).unwrap();
-            *x = ((ticks >> 16) & 0xFFFF) as u16;
-            let x = readings.get_mut(&9).unwrap();
-            *x = (ticks & 0xFFFF) as u16;
-
-            // write_to_display(&mut display, &data_str.as_str());
-            // set_display_color_for_aqi(&mut display, aqi_avg);
+            write_long_register(&mut *registers, AQI_TICK_HW, (ticks & 0xFFFFffff) as u32);
+            drop(registers);
 
             total_read = 0;
             d = [0; 2*CHUNK_SIZE];
         }
 
-        // sensor updates every 1000 mS, so this will grab doubles,
-        // but will ensure ALL updates are captured 
-        // AND the clock will run smoothly...
-        let elapsed_millis: u64 = now.elapsed()
-            .unwrap()
-            .as_millis()
-            .try_into()
-            .unwrap();
-
-        thread::sleep(Duration::from_millis(1*1000 - elapsed_millis - 10));
+        thread::sleep(Duration::from_secs(1));
     }
 }
 
 async fn server_context(socket_addr: SocketAddr, readings: Arc<Mutex<HashMap<u16, u16>>>) -> anyhow::Result<()> {
-    // loop {
     println!("Starting up Modbus server on {socket_addr}");
     let listener = TcpListener::bind(socket_addr).await?;
-    // let bind_result = block_on(TcpListener::bind(socket_addr));
-    // let listener = bind_result.unwrap();
 
     let server = Server::new(listener);
     let new_service = |_socket_addr| Ok(Some(ModbusService::new(readings.clone())));
@@ -416,8 +401,7 @@ async fn server_context(socket_addr: SocketAddr, readings: Arc<Mutex<HashMap<u16
     };
     println!("ready to serve");
     server.serve(&on_connected, on_process_error).await?;
-    // let _ = block_on(server.serve(&on_connected, on_process_error));
     println!("Server done");
-    // }
+
     Ok(())
 }
