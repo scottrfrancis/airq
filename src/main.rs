@@ -304,7 +304,7 @@ fn display_registers(readings: Arc<Mutex<HashMap<u16, u16>>>) {
         // let deg = 0xDF as char;
         let deg = 'F';  // for now just use F -- the char isn't showing up as per datasheet
         let t = read_float_register(&*registers, TEMP_HW) * 9.0/5.0 + 32.0;
-        let h = read_float_register(&*registers, HUM_HW);
+        let h = read_float_register(&*registers, HUM_HW) as u16;
         drop(registers);
 
         let line1 = format!("AQI {} {:.1}{} {}%", aqi, t, deg, h);

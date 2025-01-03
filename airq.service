@@ -1,5 +1,7 @@
 [Unit]
 Description=Air Quality Index monitor
+After=network-online.target dev-i2c-1.device
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -7,6 +9,7 @@ User=pi
 Group=pi
 Restart=always
 RestartSec=90
+ExecStartPre=/bin/sleep 15
 
 ExecStart=/home/pi/start.sh
 
